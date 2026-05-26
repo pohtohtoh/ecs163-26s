@@ -91,12 +91,12 @@ function updateParallelCoordinatesHighlight() {
         .style('opacity', function() {
             const level = parseInt(d3.select(this).attr('data-level'));
             if (!showStudentLines) return 0;
-            if (highlightLevel === null) return 0.045;
-            return highlightLevel === level ? 0.14 : 0.015;
+            if (highlightLevel === null) return 0.15; // increased from 0.045 to make colors visible
+            return highlightLevel === level ? 0.35 : 0.04; // increased highlight opacity
         }) // update opacity
         .style('stroke-width', function() {
             const level = parseInt(d3.select(this).attr('data-level'));
-            return highlightLevel === level ? 0.9 : 0.5;
+            return highlightLevel === level ? 1.2 : 0.6; // increased width slightly
         }); // update width
     
     // Change the dots on the profile lines.
@@ -1028,8 +1028,8 @@ class ParallelCoordinates {
             .attr('d', createPath) // draw path from student values
             .style('fill', 'none') // do not fill the line
             .style('stroke', d => alcoholColors[d.Dalc]) // color by alcohol level
-            .style('stroke-width', 0.5) // keep these lines thin
-            .style('opacity', showStudentLines ? 0.045 : 0) // hide them first so chart is not too busy
+            .style('stroke-width', 0.6) // keep these lines thin but visible
+            .style('opacity', showStudentLines ? 0.15 : 0) // increased from 0.045 to make colors visible
             .append('title') // add tooltip to student line
             .text(d => `Student: alcohol level ${d.Dalc}, absences ${d.absences}, final grade ${d.G3}, study time ${d.studytime}`); // explain row
 
@@ -1126,34 +1126,31 @@ class ParallelCoordinates {
                         // Update profile chart highlighting
                         updateParallelCoordinatesHighlight();
                     }
-                });
+                })
+                .append('title') // add tooltip to each dot
+                .text(dim => `${dimensionLabels[dim]} average for level ${row.level}: ${row[dim].toFixed(1)}`); // show exact average value
         });
-
-        zoomGroup.selectAll('[class^="dot-level-"]') // select average profile dots
-            .append('title') // add tooltip to dots
-            .text(function(dim) {
-                const level = parseInt(d3.select(this).attr('data-level'));
-                const row = averageData.find(item => item.level === level);
-                return `${dimensionLabels[dim]} average for level ${level}: ${row[dim].toFixed(1)}`;
-            }); // say the exact average value
 
         // Add zoom and pan for only this chart
         const zoom = d3.zoom()
             .scaleExtent([1, 5]) // allow 1x to 5x zoom
             .filter(function(event) {
-                // stop page wheel behavior here
+                // Only allow zoom on wheel events and drag events
                 if (event.type === 'wheel') {
+                    // Critical: stop the event from bubbling to prevent page zoom
                     event.preventDefault();
                     event.stopPropagation();
                     event.stopImmediatePropagation();
-                    return true;
+                    return true; // Allow D3 to handle the zoom
                 }
-                // stop mouse events from bubbling up
+                // Allow drag to pan (mousedown and mousemove)
                 if (event.type === 'mousedown' || event.type === 'mousemove') {
                     event.stopPropagation();
                     event.stopImmediatePropagation();
+                    return !event.ctrlKey && !event.button; // Allow left mouse drag only
                 }
-                return !event.ctrlKey && !event.button;
+                // Block everything else
+                return false;
             })
             .on('zoom', (event) => {
                 // keep zoom from moving too far
@@ -1176,37 +1173,37 @@ class ParallelCoordinates {
                 transform.x = Math.max(minX, Math.min(maxX, transform.x));
                 transform.y = Math.max(minY, Math.min(maxY, transform.y));
                 
-                zoomGroup.attr('transform', transform); // move the zoom group
+                zoomGroup.attr('transform', transform); // move the zoom group ONLY
             });
 
-        // Attach zoom to the overlay and the whole svg
-        zoomOverlay.call(zoom); // attach zoom to overlay
-        this.svg.call(zoom); // attach zoom to the full SVG for easier interaction
+        // Apply zoom behavior to the overlay (defined earlier)
+        zoomOverlay.call(zoom);
 
-        // Add reset button
+        // Add a reset button
         const resetButton = this.svg.append('g') // add group for reset button
-            .attr('class', 'reset-button') // give it a class
-            .attr('transform', `translate(${margins.left + this.width - 60}, ${10})`) // position in top-right corner of the plot area
-            .style('cursor', 'pointer') // show hand cursor on hover
+            .attr('class', 'reset-button') // give it a class for styling
+            .attr('transform', `translate(${margins.left + this.width - 60}, ${0})`) // position in top-right, above the plot area
+            .style('cursor', 'pointer') // show pointer cursor on hover
             .on('click', () => { // reset zoom on click
-                this.svg.transition() // animate the reset
+                zoomGroup.transition() // animate the reset
                     .duration(750) // set animation duration
-                    .call(zoom.transform, d3.zoomIdentity); // reset the zoom properly
+                    .attr('transform', 'translate(0,0) scale(1)'); // reset zoomGroup transform
+                zoomOverlay.call(zoom.transform, d3.zoomIdentity); // reset the zoom behavior's internal state
             });
 
-        resetButton.append('rect') // add button rectangle
+        resetButton.append('rect') // add rectangle for reset button background
             .attr('width', 55) // set button width
             .attr('height', 24) // set button height
             .attr('rx', 4) // round button corners
-            .attr('fill', '#2C3E50') // use dark blue text for the button
-            .attr('stroke', '#1a252f') // add button border
+            .attr('fill', '#2C3E50') // use the dashboard text color for the button
+            .attr('stroke', '#1a252f') // add a border to the button
             .attr('stroke-width', 1); // keep the border thin
 
-        resetButton.append('text') // add reset text
+        resetButton.append('text') // add text label for reset button
             .attr('x', 27.5) // center text in button
-            .attr('y', 16) // put text in middle vertically
-            .attr('text-anchor', 'middle') // center the text
-            .style('fill', '#FFFFFF') // use white text
+            .attr('y', 16) // vertically center text in button
+            .attr('text-anchor', 'middle') // center text horizontally
+            .style('fill', '#FFFFFF') // use white text for contrast
             .style('font-size', '11px') // set text size
             .style('font-weight', '600') // make text bold
             .text('Reset'); // write button label
@@ -1412,22 +1409,6 @@ async function initializeDashboard() {
     if (!charts.chart3) charts.chart3 = new ParallelCoordinates();
 
     charts.chart3.render('#chart-3', container3.clientWidth, container3.clientHeight, chart3Data);
-
-    // Stop wheel zoom on the first two charts
-    container1.addEventListener('wheel', function(event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }, { passive: false });
-    
-    container2.addEventListener('wheel', function(event) {
-        event.preventDefault();
-        event.stopPropagation();
-    }, { passive: false });
-
-    // Keep wheel zoom inside the third chart
-    container3.addEventListener('wheel', function(event) {
-        event.stopPropagation();
-    }, { passive: false });
 }
 
 // This stops resize from redrawing too many times.
@@ -1455,18 +1436,18 @@ const handleResize = debounce(() => { initializeDashboard(); }, 250);
 // Redraw when window size changes.
 window.addEventListener('resize', handleResize);
 
-// Stop page zoom except on the third chart.
+// Prevent wheel zoom on the entire page except chart-3
 document.addEventListener('wheel', function(event) {
-    // Check if the event came from chart 3.
+    // Check if the event is coming from chart-3
     if (!event.target.closest('#chart-3')) {
-        // If not chart 3, stop the default zoom.
+        // If not from chart-3, prevent default zoom behavior
         if (event.ctrlKey) {
             event.preventDefault();
         }
     }
 }, { passive: false });
 
-// Stop pinch zoom on the page.
+// Prevent pinch-to-zoom gestures on the page
 document.addEventListener('gesturestart', function(event) {
     event.preventDefault();
 }, { passive: false });
@@ -1482,6 +1463,34 @@ document.addEventListener('gestureend', function(event) {
 // Gender checkbox code.
 document.addEventListener('DOMContentLoaded', () => {
     initializeDashboard();
+    
+    // Add container event listeners ONCE (not inside initializeDashboard which runs on resize)
+    const container1 = document.getElementById('chart-1');
+    const container2 = document.getElementById('chart-2');
+    const container3 = document.getElementById('chart-3');
+    
+    // Prevent wheel events on chart-1 and chart-2 from zooming the page
+    if (container1) {
+        container1.addEventListener('wheel', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false });
+    }
+    
+    if (container2) {
+        container2.addEventListener('wheel', function(event) {
+            event.preventDefault();
+            event.stopPropagation();
+        }, { passive: false });
+    }
+    
+    // Prevent wheel events on chart-3 from bubbling to parent (but allow zoom within chart-3)
+    if (container3) {
+        container3.addEventListener('wheel', function(event) {
+            event.preventDefault(); // Prevent page zoom
+            event.stopPropagation(); // Stop event from bubbling up
+        }, { passive: false });
+    }
     
     const checkbox = document.getElementById('gender-breakdown-checkbox');
     if (checkbox) {
